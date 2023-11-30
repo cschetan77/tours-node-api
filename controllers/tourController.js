@@ -1,22 +1,22 @@
-const fs = require('fs');
 const Tour = require('../models/tourModel');
+const APIFeatures = require('./utils/APIFeatures');
 
-// const tours = JSON.parse(fs.readFileSync(`${__dirname}/../dev-data/data/tours-simple.json`));
+const aliasTopTours = (req, res, next) => {
+    req.query = {
+        ...req.query,
+        limit: '5',
+        sort: '-ratingsAverage,price',
+        fields: 'name,price,ratingsAverage,summary,difficulty'
+    };
+    next();
+};
 
 const getAllTours = async (req, res) => {
     try {
-        // Build Query
-        const queryObj = {...req.query};
-        const excludedFields = ['page', 'sort', 'limit', 'fields'];
-        excludedFields.forEach(el => {
-            delete queryObj[el];
-        });
-        let queryStr = JSON.stringify(queryObj);
-        queryStr = queryStr.replace(/\b(gt|gte|lt|lte)\b/g, match => `$${match}`);
+        const features = new APIFeatures(Tour.find(), req.query).filter().sort().limitFields().paginate();
 
-        const query = Tour.find(JSON.parse(queryStr));
         // Execute Query
-        const tours = await query;
+        const tours = await features.mongooseQuery;
 
         // Send Response
         res.status(200).json({
@@ -110,10 +110,49 @@ const deleteTour = async (req, res) => {
     }
 };
 
+const getTourStats = async (req, res) => {
+    try {
+        const stats = await Tour.aggregate([
+            {
+                $match: {ratingsAverage: {$gte: 4.5}}
+            },
+            {
+                $group: {
+                    _id: {$toUpper: '$difficulty'},
+                    numTours: {$sum: 1},
+                    numRatings: {$sum: '$ratingsQuantity'},
+                    averageRating: {$avg: '$ratingsAverage'},
+                    averagePrice: {$avg: '$price'},
+                    minPrice: {$min: '$price'},
+                    maxPrice: {$max: '$price'}
+                }
+            },
+            {
+                $sort: {averagePrice: 1}
+            }
+        ]);
+
+        res.status(200).json({
+            status: "success",
+            data: {
+                stats: stats 
+            }
+        })
+    }
+    catch(err) {
+        res.status(404).json({
+            status: 'fail',
+            message: err
+        })
+    }
+}
+
 module.exports = {
     getAllTours,
     getTour,
     createTour,
     updateTour,
-    deleteTour
+    deleteTour,
+    aliasTopTours,
+    getTourStats
 }
