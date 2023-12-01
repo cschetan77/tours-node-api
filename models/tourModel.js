@@ -1,4 +1,5 @@
 const { Schema, model } = require('mongoose');
+const slugify = require('slugify');
 
 const tourSchema = new Schema({
     name: {
@@ -7,6 +8,7 @@ const tourSchema = new Schema({
         unique: true,
         trim: true
     },
+    slug: String,
     duration: {
         type: Number,
         required: [true, 'A tour must have a duration']
@@ -31,7 +33,16 @@ const tourSchema = new Schema({
         type: Number,
         required: [true, 'tour must have a price']
     },
-    priceDiscount: Number,
+    priceDiscount: {
+        type: Number,
+        valdiate: {
+            message: 'Discount price ({VALUE}) should be below regular price',
+            // this only points to current doc on new document creation
+            validator: function(val) {
+                return val < this.price
+            }
+        }
+    },
     summary: {
         type: String,
         trim: true,
@@ -52,6 +63,24 @@ const tourSchema = new Schema({
         select: false
     },
     startDates: [Date]
+}, {
+    toJSON: {virtuals: true}
+});
+
+tourSchema.virtual('durationWeeks').get(function() {
+    return this.duration/7;
+});
+
+// Document Middleware runs before .save() and .create()
+tourSchema.pre('save', function(next) {
+    this.slug = slugify(this.name, {lower: true});
+    next();
+});
+
+// Query Middlewares
+tourSchema.pre('find', function(next) {
+    console.log(this);
+    next();
 });
 
 const Tour = model('Tour', tourSchema);
