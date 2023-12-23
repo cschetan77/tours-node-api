@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const User = require("../models/userModel");
 const catchAsync = require('./utils/catchAsync');
 const AppError = require("./utils/AppError");
+const sendEmail = require('./utils/email');
 
 const signToken = id => (
     jwt.sign({
@@ -83,8 +84,63 @@ const protect = catchAsync(async (req, res, next) => {
     next();
 });
 
+const restrictTo = (...roles) => (req, res, next) => {
+    if(!roles.includes(req.user.role)) {
+        return next(new AppError('You do not have permission to perform this action'), 403);
+    }
+    next();
+}
+
+const forgotPassword = catchAsync(async (req, res, next) => {
+    // 1. Get user based on posted email
+    const user = await User.findOne({ email: req.body.email });
+
+    if(!user) {
+        return next(new AppError('There is no user with email address.', 404));
+    }
+
+    // 2. Generate the random reset token
+    const resetToken = user.createPasswordResetToken();
+    await user.save({ validateBeforeSave: false});
+    
+    // 3. Send it to user's email
+    const resetURL = `${req.protocol}://${req.get('host')}/api/v1/users/resetPassowrd/${resetToken}`;
+
+    const message = `Forgot your password? Submit a PATCH request with your new password and password confirm to: ${resetURL}
+    \nIf you didn't forget the password, please ignore this email!`;
+
+    try {
+        await sendEmail({
+            email: user.email,
+            subject: 'Your password reset token (valid for 10 mins)',
+            message
+        });
+    
+        res.status(200).json({
+            status: 'success',
+            message: 'Token sent to email!'
+        })
+    }
+    catch(err) {
+        user.passwordResetToken = undefined;
+        user.passwordResetExpires = undefined;
+        await User.findOne({ email: req.body.email });
+        return next(new AppError('There was an error sending the email. Try again later!', 500));
+    }
+    
+});
+
+const resetPassword = (req, res, next) => {
+    res.status(200).json({
+        status: "successful",
+    })
+}
+
 module.exports = {
     signup,
     login,
-    protect
+    protect,
+    restrictTo,
+    resetPassword,
+    forgotPassword
 }
