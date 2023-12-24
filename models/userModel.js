@@ -43,13 +43,30 @@ const userSchema = new Schema({
     },
     passwordChangedAt: Date,
     passwordResetToken: String,
-    passwordResetExpires: Date
+    passwordResetExpires: Date,
+    active: {
+        type: Boolean,
+        default: true,
+        select: false
+    }
+});
+
+userSchema.pre('save', function(next) {
+    if(!this.isModified('password') || this.isNew) return next();
+    this.passwordChangedAt = Date.now() - 1000;
+    next();
 });
 
 userSchema.pre('save', async function(next) {
     if(!this.isModified('password')) return next();
     this.password = await bcrypt.hash(this.password, 12)
     this.passwordConfirm = undefined;
+    next();
+});
+
+userSchema.pre(/^find/, function(next) {
+    // This points to current query
+    this.find({ active: {$ne: false} });
     next();
 });
 
